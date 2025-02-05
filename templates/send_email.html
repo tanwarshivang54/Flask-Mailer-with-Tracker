@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Send Email - Flask Mailer{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <h1 class="text-3xl font-bold text-gray-900">Send Email Campaign</h1>
+
+    <form method="POST" enctype="multipart/form-data" class="space-y-6">
+        <div class="card">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Email Details</h2>
+            
+            <!-- Recipients -->
+            <div class="mb-4">
+                <label for="recipients" class="form-label">Recipients</label>
+                <textarea id="recipients" 
+                         name="recipients" 
+                         rows="3" 
+                         class="input-field"
+                         placeholder="Enter email addresses separated by commas"
+                         required></textarea>
+                <p class="mt-1 text-sm text-gray-500">Example: john@example.com, jane@example.com</p>
+            </div>
+
+            <!-- Subject -->
+            <div class="mb-4">
+                <label for="subject" class="form-label">Subject</label>
+                <input type="text" 
+                       id="subject" 
+                       name="subject" 
+                       class="input-field"
+                       placeholder="Enter email subject"
+                       required>
+            </div>
+
+            <!-- Body -->
+            <div class="mb-4">
+                <label for="body" class="form-label">Email Body</label>
+                <textarea id="body" 
+                         name="body" 
+                         rows="10" 
+                         class="input-field"
+                         placeholder="Enter your email content here. HTML is supported."
+                         required></textarea>
+            </div>
+
+            <!-- Attachments -->
+            <div class="mb-4">
+                <label for="attachments" class="form-label">Attachments</label>
+                <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-primary transition-colors duration-300">
+                    <div class="space-y-1 text-center">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <div class="flex text-sm text-gray-600">
+                            <label for="attachments" class="relative cursor-pointer rounded-md font-medium text-primary hover:text-primary-dark focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary">
+                                <span>Upload files</span>
+                                <input id="attachments" 
+                                       name="attachments" 
+                                       type="file" 
+                                       multiple 
+                                       class="sr-only">
+                            </label>
+                            <p class="pl-1">or drag and drop</p>
+                        </div>
+                        <p class="text-xs text-gray-500">
+                            Any file type up to 10MB
+                        </p>
+                    </div>
+                </div>
+                <div id="selected-files" class="mt-2 text-sm text-gray-500"></div>
+            </div>
+        </div>
+
+        <!-- Preview Card -->
+        <div class="card bg-white">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Email Preview</h2>
+            <div class="border rounded-lg p-4">
+                <div id="preview-subject" class="text-lg font-medium text-gray-900 mb-2"></div>
+                <div id="preview-body" class="prose max-w-none"></div>
+            </div>
+        </div>
+
+        <!-- Send Button -->
+        <div class="flex justify-end">
+            <button type="submit" class="btn-primary inline-flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                </svg>
+                Send Campaign
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    // File selection display
+    const attachmentsInput = document.getElementById('attachments');
+    const selectedFiles = document.getElementById('selected-files');
+    
+    attachmentsInput.addEventListener('change', function(e) {
+        const fileList = Array.from(e.target.files).map(file => file.name);
+        selectedFiles.textContent = fileList.join(', ');
+    });
+
+    // Live preview
+    const subjectInput = document.getElementById('subject');
+    const bodyInput = document.getElementById('body');
+    const previewSubject = document.getElementById('preview-subject');
+    const previewBody = document.getElementById('preview-body');
+
+    function updatePreview() {
+        previewSubject.textContent = subjectInput.value || 'Email Subject';
+        previewBody.innerHTML = bodyInput.value || 'Email Content';
+    }
+
+    subjectInput.addEventListener('input', updatePreview);
+    bodyInput.addEventListener('input', updatePreview);
+
+    // Initial preview
+    updatePreview();
+
+    // Drag and drop functionality
+    const dropZone = document.querySelector('.border-dashed');
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight(e) {
+        dropZone.classList.add('border-primary', 'bg-yellow-50');
+    }
+
+    function unhighlight(e) {
+        dropZone.classList.remove('border-primary', 'bg-yellow-50');
+    }
+
+    dropZone.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        attachmentsInput.files = files;
+        
+        // Trigger change event for file list display
+        const event = new Event('change');
+        attachmentsInput.dispatchEvent(event);
+    }
+</script>
+{% endblock %}

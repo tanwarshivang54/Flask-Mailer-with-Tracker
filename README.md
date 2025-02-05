@@ -1,93 +1,97 @@
-# Email Tracking System
+# Flask Mailer with User Management
 
-## Overview
-A comprehensive email tracking application built with Flask, SQLAlchemy, and Python 2.7, designed to monitor and analyze email campaign performance.
+A Flask-based email campaign management system with user authentication, admin controls, and email tracking capabilities.
 
 ## Features
-- 📧 Send personalized emails
-- 📊 Real-time campaign tracking
-- 🔍 Detailed campaign metrics dashboard
-- 📈 Track email opens, unique recipients, and engagement
 
-## Prerequisites
-- Python 2.7.5+
-- pip (Python package manager)
+- User authentication system
+- Admin dashboard for user management and universal statistics
+- User dashboard for individual statistics
+- Email campaign creation and tracking
+- Modern UI with yellow-based theme using Tailwind CSS
+- Responsive design with animations and effects
 
 ## Installation
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/yourusername/email-tracker.git
-cd email-tracker
-```
-
-### 2. Create Virtual Environment (Optional but Recommended)
-```bash
-virtualenv -p python2.7 venv
-source venv/bin/activate
-```
-
-### 3. Install Dependencies
+1. Clone the repository
+2. Navigate to the Mailer2 directory
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Configuration
-1. Set tracking domain in `flask_app.py`:
-```python
-TRACKING_DOMAIN = os.environ.get('TRACKING_DOMAIN', 'http://your-domain.com')
+## Initial Setup
+
+1. Initialize the database:
+```bash
+python db_setup.py
 ```
 
-2. Configure email settings in `mailer.py`
+This will create:
+- Database with required tables
+- Default admin account (username: admin, password: admin)
 
 ## Running the Application
+
+1. Start the Flask server:
 ```bash
-python flask_app.py
+python app.py
 ```
-- Access the application at `http://localhost:5000`
 
-## Database
-- Uses SQLite (`tracking.db`)
-- Automatically creates database on first run
-- Stores tracking information for email campaigns
+2. Open a web browser and navigate to:
+```
+http://localhost:5000
+```
 
-## Tracking Workflow
-1. Send emails through the web interface
-2. Each email includes a unique tracking pixel
-3. Opens are recorded with:
-   - Timestamp
-   - IP Address
-   - Device Information
-   - Campaign ID
+## Default Admin Credentials
 
-## Dashboard Metrics
-- Total Campaigns
-- Total Unique Recipients
-- Total Opens
-- Average Open Rate
-- Detailed Campaign Tracking
+- Username: admin
+- Password: admin
 
-## Troubleshooting
-- Ensure all dependencies are installed
-- Check `requirements.txt` for specific package versions
-- Verify Python 2.7 compatibility
+**Important:** Change these credentials after first login!
 
-## Security Considerations
-- Use a strong, unique `secret_key` in Flask
-- Do not expose tracking database
-- Implement additional authentication for production
+## Usage
 
-## Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+### Admin Users
 
+1. Login with admin credentials
+2. Access admin dashboard
+3. Manage users (create/delete)
+4. View universal statistics
+5. Track all email campaigns
 
-## Contact
-neehan@gmail.com
+### Regular Users
 
----
+1. Login with provided credentials
+2. Access personal dashboard
+3. View individual statistics
+4. Create and send email campaigns
+5. Track campaign performance
 
-### Developed with ❤️ for Email Tracking Analytics
+## Security Notes
+
+- All passwords are hashed before storage
+- Admin privileges are strictly enforced
+- Session-based authentication
+- Protected routes for admin functions
+
+## Directory Structure
+
+```
+Mailer2/
+├── templates/            # HTML templates
+├── app.py               # Main application file
+├── auth.py             # Authentication module
+├── db_setup.py         # Database initialization
+├── mailer.py           # Email sending functionality
+├── requirements.txt     # Python dependencies
+└── README.md           # This file
+```
+
+## Technical Stack
+
+- Backend: Flask (Python)
+- Database: SQLite
+- Frontend: HTML, Tailwind CSS
+- Authentication: Flask-Login
+- Email: SMTP

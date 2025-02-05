@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Dashboard - Flask Mailer{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <h1 class="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+
+    <!-- Stats Overview -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="card bg-gradient-to-br from-primary to-primary-dark">
+            <h3 class="text-lg font-semibold text-white mb-2">Total Users</h3>
+            <p class="text-3xl font-bold text-white">{{ stats.total_users }}</p>
+        </div>
+
+        <div class="card bg-gradient-to-br from-primary to-primary-dark">
+            <h3 class="text-lg font-semibold text-white mb-2">Total Emails</h3>
+            <p class="text-3xl font-bold text-white">{{ stats.total_emails }}</p>
+        </div>
+
+        <div class="card bg-gradient-to-br from-primary to-primary-dark">
+            <h3 class="text-lg font-semibold text-white mb-2">Total Opens</h3>
+            <p class="text-3xl font-bold text-white">{{ stats.total_opens }}</p>
+        </div>
+
+        <div class="card bg-gradient-to-br from-primary to-primary-dark">
+            <h3 class="text-lg font-semibold text-white mb-2">Open Rate</h3>
+            <p class="text-3xl font-bold text-white">{{ "%.1f"|format(stats.open_rate) }}%</p>
+        </div>
+    </div>
+
+    <!-- User Management -->
+    <div class="mt-8">
+        <div class="card">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">User Management</h2>
+            
+            <!-- Create User Form -->
+            <form id="createUserForm" method="POST" action="{{ url_for('manage_users') }}" class="space-y-4 mb-8">
+                <h3 class="text-lg font-semibold text-gray-700">Create New User</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" id="username" name="username" required class="input-field">
+                    </div>
+                    
+                    <div>
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" id="password" name="password" required class="input-field">
+                    </div>
+                </div>
+
+                <div>
+                    <label for="admin_password" class="form-label">Your Admin Password</label>
+                    <input type="password" id="admin_password" name="admin_password" required class="input-field">
+                </div>
+
+                <button type="submit" class="btn-primary">
+                    Create User
+                </button>
+            </form>
+
+            <!-- Delete User Form -->
+            <form id="deleteUserForm" method="POST" class="space-y-4">
+                <input type="hidden" name="_method" value="DELETE">
+                <h3 class="text-lg font-semibold text-gray-700">Delete User</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="delete_username" class="form-label">Username to Delete</label>
+                        <input type="text" id="delete_username" name="username" required class="input-field">
+                    </div>
+                    
+                    <div>
+                        <label for="delete_admin_password" class="form-label">Your Admin Password</label>
+                        <input type="password" id="delete_admin_password" name="admin_password" required class="input-field">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-primary bg-red-600 hover:bg-red-700">
+                    Delete User
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Handle DELETE method for user deletion
+    document.getElementById('deleteUserForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        fetch('{{ url_for("manage_users") }}', {
+            method: 'DELETE',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert(data.message || 'Failed to delete user');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while deleting the user');
+        });
+    });
+</script>
+{% endblock %}

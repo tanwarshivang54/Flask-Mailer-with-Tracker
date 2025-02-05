@@ -1,203 +1,213 @@
-import streamlit as st
-import datetime
-import uuid
-import pandas as pd
-import sqlite3
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, abort
 import os
-import sys
+from functools import wraps
+from datetime import datetime
+import uuid
+from werkzeug.utils import secure_filename
+import mimetypes
 
-# Ensure the current directory is in Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, current_dir)
+from auth import authenticate_user, create_user, delete_user, get_user_stats, get_admin_stats
+from mailer import EmailSender
 
-# Import custom modules
-from mailer import EmailSender, read_file_lines
+# Constants
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'doc', 'docx'}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
-# Verify imports
-print("Current Python Path:", sys.path)
-print("Mailer module path:", os.path.abspath(os.path.join(current_dir, 'mailer.py')))
+# Create Flask app with explicit template and static folders
+app = Flask(__name__,
+            template_folder=os.path.abspath(os.path.join(os.path.dirname(__file__), 'templates')),
+            static_folder=os.path.abspath(os.path.join(os.path.dirname(__file__), 'static')))
+app.secret_key = os.urandom(24)
 
-def load_tracking_data():
-    """
-    Load tracking data from SQLite database
-    """
-    try:
-        conn = sqlite3.connect('tracking.db')
+# Error handlers
+@app.errorhandler(404)
+def not_found_error(error):
+    if 'user_id' in session:
+        flash('Page not found')
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
+
+@app.errorhandler(500)
+def internal_error(error):
+    flash('An internal error occurred')
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Authentication decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session or not session.get('is_admin'):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/')
+def index():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        result = authenticate_user(username, password)
         
-        # Check if table exists
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pixel_tracks'")
-        if not cursor.fetchone():
-            st.warning("No tracking data table found.")
-            return pd.DataFrame()
+        if result:
+            user_id, is_admin = result
+            session['user_id'] = user_id
+            session['username'] = username
+            session['is_admin'] = is_admin
+            return redirect(url_for('admin_dashboard' if is_admin else 'dashboard'))
+        
+        flash('Invalid username or password')
+    return render_template('login.html')
 
-        # Try to read data with error handling
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    if session.get('is_admin'):
+        return redirect(url_for('admin_dashboard'))
+    
+    stats = get_user_stats(session['user_id'])
+    return render_template('user_dashboard.html', stats=stats)
+
+@app.route('/admin')
+@admin_required
+def admin_dashboard():
+    stats = get_admin_stats()
+    return render_template('admin_dashboard.html', stats=stats)
+
+@app.route('/send_email', methods=['GET', 'POST'])
+@login_required
+def send_email():
+    if request.method == 'POST':
+        if not request.form.get('recipients') or not request.form.get('subject') or not request.form.get('body'):
+            flash('Please fill in all required fields')
+            return render_template('send_email.html')
+
+        recipients = request.form['recipients'].split(',')
+        subject = request.form['subject']
+        body = request.form['body']
+        
+        # Handle attachments
+        attachments = []
+        if 'attachments' in request.files:
+            files = request.files.getlist('attachments')
+            for file in files:
+                if file.filename:
+                    if file.filename == '':
+                        flash('One or more files have no filename')
+                        continue
+                    if not allowed_file(file.filename):
+                        flash(f'File type not allowed for {file.filename}')
+                        continue
+                    if len(file.read()) > MAX_FILE_SIZE:
+                        flash(f'File {file.filename} is too large (max 10MB)')
+                        continue
+                    file.seek(0)  # Reset file pointer after reading
+                    
+                    filename = secure_filename(file.filename)
+                    filepath = os.path.join('temp', filename)
+                    os.makedirs('temp', exist_ok=True)
+                    file.save(filepath)
+                    attachments.append(filepath)
+
         try:
-            df = pd.read_sql_query("SELECT * FROM pixel_tracks", conn)
-            conn.close()
-            return df
-        except Exception as e:
-            st.error(f"Error reading tracking data: {e}")
-            return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Database connection error: {e}")
-        return pd.DataFrame()
-
-def send_emails_page():
-    """
-    Streamlit page for sending emails
-    """
-    st.title("📧 Email Campaign Sender")
-
-    # Account file selection
-    accounts_file = st.file_uploader("Upload Accounts File", type=['txt'])
-    recipients_file = st.file_uploader("Upload Recipients File", type=['txt'])
-
-    # Email details
-    subject = st.text_input("Email Subject")
-    body = st.text_area("Email Body")
-
-    # Attachments
-    attachments = st.file_uploader("Upload Attachments", accept_multiple_files=True)
-
-    # Account selection
-    if accounts_file:
-        # Read accounts - handle both bytes and string
-        accounts_content = accounts_file.getvalue()
-        if isinstance(accounts_content, bytes):
-            accounts_content = accounts_content.decode('utf-8')
-        
-        accounts_content = accounts_content.splitlines()
-        accounts = [line.strip().split(',') for line in accounts_content if line.strip()]
-        selected_account = st.selectbox("Select Sending Account", 
-            [account[0] for account in accounts])
-
-    # Send button
-    if st.button("Send Emails"):
-        if not all([accounts_file, recipients_file, subject, body]):
-            st.error("Please fill in all required fields")
-            return
-
-        # Save temporary files
-        with open('temp_accounts.txt', 'w') as f:
-            f.write('\n'.join(','.join(account) for account in accounts))
-        
-        # Handle recipients file - similar conversion
-        recipients_bytes = recipients_file.getvalue()
-        if isinstance(recipients_bytes, bytes):
-            recipients = recipients_bytes.decode('utf-8').splitlines()
-        else:
-            recipients = recipients_bytes.splitlines()
-        
-        with open('temp_recipients.txt', 'w') as f:
-            f.write('\n'.join(recipients))
-
-        # Prepare attachments
-        attachment_paths = []
-        if attachments:
-            for uploaded_file in attachments:
-                with open(uploaded_file.name, 'wb') as f:
-                    f.write(uploaded_file.getvalue())
-                attachment_paths.append(uploaded_file.name)
-
-        # Find account credentials
-        account_creds = next((account for account in accounts if account[0] == selected_account), None)
-        
-        if account_creds:
-            try:
-                # Generate campaign ID
-                campaign_id = datetime.datetime.now().strftime("%d %b %Y")
-                
-                # Prepare tracking pixel
-                tracking_pixel = '<img src="http://45.141.122.177:8080/track?campaign_id={}" width="1" height="1" style="display:none;">'.format(campaign_id)
-                full_body = body + '\n\n' + tracking_pixel
-
-                # Send emails
-                sender = EmailSender(account_creds[0], account_creds[1])
-                email_list = [(recipient, subject, full_body, campaign_id, attachment_paths or None) for recipient in recipients]
-                results = sender.send_emails_threaded(email_list)
-
-                # Clean up temporary files
-                os.remove('temp_accounts.txt')
-                os.remove('temp_recipients.txt')
-                for path in attachment_paths:
-                    os.remove(path)
-
-                # Display results
-                successful = sum(1 for result in results if result[0])
-                failed = len(results) - successful
-                st.success("Campaign sent! {} emails sent successfully, {} failed.".format(successful, failed))
-
-            except Exception as e:
-                st.error('Error sending emails: {}'.format(e))
-        else:
-            st.error("Selected account not found")
-
-def dashboard_page():
-    """
-    Streamlit page for email tracking dashboard
-    """
-    st.title("📊 Email Campaign Dashboard")
-
-    # Load tracking data
-    tracking_df = load_tracking_data()
-
-    if not tracking_df.empty:
-        # Display raw data for debugging
-        st.subheader("Raw Tracking Data")
-        st.dataframe(tracking_df)
-
-        # Check available columns
-        st.subheader("Available Columns")
-        st.write(tracking_df.columns.tolist())
-
-        # Campaign overview with flexible column handling
-        st.subheader("Campaign Performance")
-        try:
-            # Use columns that definitely exist
-            campaign_columns = ['campaign_id']
+            # Generate campaign ID
+            campaign_id = str(uuid.uuid4())
             
-            # Add optional columns if they exist
-            optional_columns = ['recipient', 'timestamp', 'ip_address']
-            for col in optional_columns:
-                if col in tracking_df.columns:
-                    campaign_columns.append(col)
+            # Add tracking pixel
+            tracking_pixel = f'<img src="http://45.141.122.177:8080/track?campaign_id={campaign_id}" width="1" height="1" style="display:none;">'
+            full_body = body + '\n\n' + tracking_pixel
 
-            # Perform aggregation with available columns
-            campaign_metrics = tracking_df.groupby('campaign_id').agg({
-                col: 'count' if col == 'recipient' else 
-                     'min' if col == 'timestamp' else 
-                     'nunique' if col == 'ip_address' else 'first'
-                for col in campaign_columns
-            })
+            # Send emails
+            sender = EmailSender()  # Assuming EmailSender is modified to use environment variables
+            email_list = [(recipient.strip(), subject, full_body, campaign_id, attachments) for recipient in recipients]
+            results = sender.send_emails_threaded(email_list)
 
-            # Rename columns for clarity
-            column_names = {
-                'recipient': 'Total Emails',
-                'timestamp': 'First Tracked',
-                'ip_address': 'Unique IPs'
-            }
-            campaign_metrics.rename(columns=column_names, inplace=True)
-            
-            st.dataframe(campaign_metrics)
+            # Clean up attachments
+            for attachment in attachments:
+                if os.path.exists(attachment):
+                    os.remove(attachment)
+
+            # Return results
+            successful = sum(1 for result in results if result[0])
+            failed = len(results) - successful
+            flash(f'Campaign sent! {successful} emails sent successfully, {failed} failed.')
 
         except Exception as e:
-            st.error(f"Error processing campaign metrics: {e}")
+            flash(f'Error sending emails: {str(e)}')
 
-    else:
-        st.warning("No tracking data available. Ensure tracking database is set up correctly.")
+    return render_template('send_email.html')
 
-def main():
-    """
-    Main Streamlit app
-    """
-    st.sidebar.title("Email Tracker")
-    page = st.sidebar.radio("Navigate", ["Send Emails", "Dashboard"])
+@app.route('/admin/users', methods=['GET', 'POST', 'DELETE'])
+@admin_required
+def manage_users():
+    if request.method == 'POST':
+        if not all(key in request.form for key in ['username', 'password', 'admin_password']):
+            flash('Missing required fields')
+            return render_template('manage_users.html')
 
-    if page == "Send Emails":
-        send_emails_page()
-    else:
-        dashboard_page()
+        new_username = request.form['username']
+        new_password = request.form['password']
+        admin_password = request.form['admin_password']
+        
+        if create_user(session['username'], admin_password, new_username, new_password):
+            flash('User created successfully')
+        else:
+            flash('Failed to create user')
+            
+    elif request.method == 'DELETE':
+        if not all(key in request.form for key in ['username', 'admin_password']):
+            flash('Missing required fields')
+            return render_template('manage_users.html')
 
-if __name__ == "__main__":
-    main()
+        username_to_delete = request.form['username']
+        admin_password = request.form['admin_password']
+        
+        if username_to_delete == session['username']:
+            flash('Cannot delete your own account')
+            return render_template('manage_users.html')
+        
+        if delete_user(session['username'], admin_password, username_to_delete):
+            flash('User deleted successfully')
+        else:
+            flash('Failed to delete user')
+    
+    return render_template('manage_users.html')
+
+if __name__ == '__main__':
+    # Ensure the database is initialized
+    from db_setup import init_database
+    init_database()
+    
+    # Create static folder if it doesn't exist
+    os.makedirs(os.path.join(os.path.dirname(__file__), 'static'), exist_ok=True)
+    
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=3000)
+    args = parser.parse_args()
+    
+    # Run the app - force debug mode to false in production
+    app.run(host='0.0.0.0', port=args.port, debug=True)
